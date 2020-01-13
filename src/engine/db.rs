@@ -1,6 +1,7 @@
 use std::fmt;
 
 use crate::engine::asl;
+use crate::sql_grammar;
 
 #[derive(Debug)]
 pub enum QueryErrorType {
@@ -48,35 +49,35 @@ impl Database {
     /**
     Run a select query
     */
-    pub fn run_select(query: &asl::SelectQuery) -> Result<&str, QueryError> {
-        Ok(&format!("Running Select {:?}", query))
+    pub fn run_select(&self, query: &asl::SelectQuery) -> Result<String, QueryError> {
+        Ok(format!("Running Select {:?}", query))
     }
 
     /**
     Run an insert query
     */
-    pub fn run_insert(query: &asl::InsertQuery) -> Result<&str, QueryError> {
-        Ok(&format!("Running Insert {:?}", query))
+    pub fn run_insert(&self, query: &asl::InsertQuery) -> Result<String, QueryError> {
+        Ok(format!("Running Insert {:?}", query))
     }
 
     /**
     Run an insert query
     */
-    pub fn run_create_table(query: &asl::CreateTableQuery) -> Result<&str, QueryError> {
-        Ok(&format!("Running Create Table {:?}", query))
+    pub fn run_create_table(&self, query: &asl::CreateTableQuery) -> Result<String, QueryError> {
+        Ok(format!("Running Create Table {:?}", query))
     }
 
     /**
     Run an insert query
     */
-    pub fn run_drop_table(query: &asl::DropTableQuery) -> Result<&str, QueryError> {
-        Ok(&format!("Running Drop Table {:?}", query))
+    pub fn run_drop_table(&self, query: &asl::DropTableQuery) -> Result<String, QueryError> {
+        Ok(format!("Running Drop Table {:?}", query))
     }
 
     /**
     Parse and run query
     */
-    pub fn run_query(&self, query: &str) -> Result<&str, QueryError> {
+    pub fn run_query(&self, query: &str) -> Result<String, QueryError> {
         let query = match parse_query(query) {
             Ok(query) => query,
             Err(e) =>  return Err(e)
