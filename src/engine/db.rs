@@ -46,6 +46,10 @@ impl Database {
         Database {tables: vec![]}
     }
 
+    pub fn load_definitions(&self) {
+
+    }
+
     /**
     Run a select query
     */
