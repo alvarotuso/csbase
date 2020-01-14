@@ -1,6 +1,6 @@
 use std::fmt;
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 
 use bincode;
 use serde::{Serialize, Deserialize};
@@ -57,8 +57,24 @@ impl Database {
         format!("{}/{}", self.get_base_path(), path)
     }
 
-    pub fn load_definitions(&self) {
-
+    /**
+    * Read and deserialize the database definition file
+    */
+    pub fn load_definitions(&mut self) -> std::io::Result<()> {
+        let file = fs::File::open(self.get_path(config::TABLE_DEFINITIONS_FILE));
+        match file {
+            Ok(mut f) => {
+                let mut buffer = Vec::new();
+                f.read_to_end(&mut buffer)?;
+                self.db_definition = bincode::deserialize(buffer.as_slice()).unwrap();
+                print!("Loaded db definition: {:#?}", self.db_definition);
+                Ok(())
+            },
+            Err(e) => {
+                print!("Error while loading db definition: {:#?}", e);
+                Ok(())
+            }
+        }
     }
 
     /**
