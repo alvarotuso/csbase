@@ -1,10 +1,12 @@
-#[derive(Debug)]
+use serde::{Serialize, Deserialize};
+
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct Column {
     pub name: String,
     pub column_type: Type,
 }
 
-#[derive(Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct Table {
     pub name: String,
     pub columns: Vec<Column>
@@ -42,7 +44,7 @@ pub enum Query {
     DropTable(DropTableQuery),
 }
 
-#[derive(Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub enum Type {
     Str,
     Bool,
@@ -50,7 +52,7 @@ pub enum Type {
     Float,
 }
 
-#[derive(Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub enum Value {
     Str(String),
     Bool(bool),

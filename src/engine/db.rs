@@ -1,23 +1,22 @@
 use std::fmt;
+use std::fs;
+use std::io::Write;
 
+use bincode;
+use serde::{Serialize, Deserialize};
+use lalrpop_util;
+
+use crate::config::config;
 use crate::engine::asl;
 use crate::sql_grammar;
 
-#[derive(Debug)]
-pub enum QueryErrorType {
-    SyntaxError,
-}
+
+type ParseError<'input> = lalrpop_util::ParseError<usize, sql_grammar::Token<'input>, &'static str>;
 
 #[derive(Debug)]
-pub struct QueryError {
-    error_type: QueryErrorType,
-    message: String,
-}
-
-impl QueryError {
-    fn new(error_type: QueryErrorType, message: String) -> QueryError {
-        QueryError {error_type, message}
-    }
+pub enum QueryError  {
+    ParseError(String),
+    IOError(std::io::Error),
 }
 
 impl fmt::Display for QueryError {
@@ -26,24 +25,36 @@ impl fmt::Display for QueryError {
     }
 }
 
-/**
-Parse query into ASL
-*/
-pub fn parse_query(query: &str) -> Result<asl::Query, QueryError> {
-    match sql_grammar::QueryParser::new().parse(query) {
-        Ok(q) => Ok(q),
-        Err(e) => Err(QueryError::new(QueryErrorType::SyntaxError,format!("{}", e)))
-    }
+impl std::convert::From<std::io::Error> for QueryError {
+    fn from(error: std::io::Error) -> Self {QueryError::IOError(error)}
+}
+
+impl <'input> std::convert::From<ParseError<'input>> for QueryError {
+    fn from(error: ParseError<'input>) -> Self {QueryError::ParseError(format!("{:?}", error))}
+}
+
+
+#[derive(Serialize, Deserialize, PartialEq, Debug)]
+pub struct DatabaseDefinition {
+    tables: Vec<asl::Table>,
 }
 
 #[derive(Debug)]
 pub struct Database {
-    tables: Vec<asl::Table>,
+    pub db_definition: DatabaseDefinition,
 }
 
 impl Database {
     pub fn new() -> Database {
-        Database {tables: vec![]}
+        Database {db_definition: DatabaseDefinition { tables: vec![] }}
+    }
+
+    fn get_base_path(&self) -> String {
+        shellexpand::tilde(&config::DB_PATH).to_string()
+    }
+
+    fn get_path(&self, path: &str) -> String {
+        format!("{}/{}", self.get_base_path(), path)
     }
 
     pub fn load_definitions(&self) {
@@ -51,46 +62,52 @@ impl Database {
     }
 
     /**
-    Run a select query
+    * Serialize and store the database definition
     */
-    pub fn run_select(&self, query: &asl::SelectQuery) -> Result<String, QueryError> {
+    pub fn store_definitions(&self) -> std::io::Result<()> {
+        let mut file = fs::File::create(self.get_path(config::TABLE_DEFINITIONS_FILE))?;
+        file.write_all(bincode::serialize(&self.db_definition).unwrap().as_slice())?;
+        Ok(())
+    }
+
+    /**
+    * Ensure that the database path exists
+    */
+    pub fn ensure_base_path(&self) -> std::io::Result<()> {
+        fs::create_dir_all(&self.get_base_path())?;
+        Ok(())
+    }
+
+    pub fn run_select(&self, query: asl::SelectQuery) -> Result<String, QueryError> {
         Ok(format!("Running Select {:?}", query))
     }
 
-    /**
-    Run an insert query
-    */
-    pub fn run_insert(&self, query: &asl::InsertQuery) -> Result<String, QueryError> {
+    pub fn run_insert(&self, query: asl::InsertQuery) -> Result<String, QueryError> {
         Ok(format!("Running Insert {:?}", query))
     }
 
-    /**
-    Run an insert query
-    */
-    pub fn run_create_table(&self, query: &asl::CreateTableQuery) -> Result<String, QueryError> {
-        Ok(format!("Running Create Table {:?}", query))
+    pub fn run_create_table(&mut self, query: asl::CreateTableQuery) -> Result<String, QueryError> {
+        let result = format!("Running Create Table {:?}", query);
+        let table = asl::Table {name: query.table, columns: query.columns};
+        self.db_definition.tables.push(table);
+        self.store_definitions()?;
+        Ok(result)
     }
 
-    /**
-    Run an insert query
-    */
-    pub fn run_drop_table(&self, query: &asl::DropTableQuery) -> Result<String, QueryError> {
+    pub fn run_drop_table(&self, query: asl::DropTableQuery) -> Result<String, QueryError> {
         Ok(format!("Running Drop Table {:?}", query))
     }
 
     /**
     Parse and run query
     */
-    pub fn run_query(&self, query: &str) -> Result<String, QueryError> {
-        let query = match parse_query(query) {
-            Ok(query) => query,
-            Err(e) =>  return Err(e)
-        };
+    pub fn run_query(&mut self, query: &str) -> Result<String, QueryError> {
+        let query = sql_grammar::QueryParser::new().parse(query)?;
         match query {
-            asl::Query::Select(q) => self.run_select(&q),
-            asl::Query::Insert(q) => self.run_insert(&q),
-            asl::Query::CreateTable(q) => self.run_create_table(&q),
-            asl::Query::DropTable(q) => self.run_drop_table(&q),
+            asl::Query::Select(q) => self.run_select(q),
+            asl::Query::Insert(q) => self.run_insert(q),
+            asl::Query::CreateTable(q) => self.run_create_table(q),
+            asl::Query::DropTable(q) => self.run_drop_table(q),
         }
     }
 }

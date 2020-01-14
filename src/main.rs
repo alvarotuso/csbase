@@ -1,8 +1,8 @@
 #[macro_use] extern crate lalrpop_util;
+extern crate lalrpop;
 
 mod config;
 mod engine;
-mod fs;
 
 use std::io;
 
@@ -10,8 +10,8 @@ lalrpop_mod!(pub sql_grammar, "/grammar/sql_grammar.rs"); // synthesized by LALR
 
 
 fn main() {
-    fs::db::ensure_db_path().expect("Unable to verify or create db_path");
-    let database = engine::db::Database::new();
+    let mut database = engine::db::Database::new();
+    database.ensure_base_path().expect("Unable to verify or create db_path");
     loop {
         print!("SQL> ");
         let mut command = String::new();
