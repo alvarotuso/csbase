@@ -1,116 +1,77 @@
-use std::fmt;
-use std::fs;
-use std::io::{Read, Write};
+use std::collections::HashMap;
 
-use bincode;
 use serde::{Serialize, Deserialize};
-use lalrpop_util;
 
-use crate::config::config;
 use crate::engine::asl;
+use crate::engine::errors::{QueryError, SystemError};
+use crate::engine::fs::DBFileSystem;
 use crate::sql_grammar;
-
-
-type ParseError<'input> = lalrpop_util::ParseError<usize, sql_grammar::Token<'input>, &'static str>;
-
-#[derive(Debug)]
-pub enum QueryError  {
-    ParseError(String),
-    IOError(std::io::Error),
-}
-
-impl fmt::Display for QueryError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{:?}", &self)
-    }
-}
-
-impl std::convert::From<std::io::Error> for QueryError {
-    fn from(error: std::io::Error) -> Self {QueryError::IOError(error)}
-}
-
-impl <'input> std::convert::From<ParseError<'input>> for QueryError {
-    fn from(error: ParseError<'input>) -> Self {QueryError::ParseError(format!("{:?}", error))}
-}
 
 
 #[derive(Serialize, Deserialize, PartialEq, Debug)]
 pub struct DatabaseDefinition {
-    tables: Vec<asl::Table>,
+    tables: HashMap<String, asl::Table>,
 }
 
 #[derive(Debug)]
 pub struct Database {
-    pub db_definition: DatabaseDefinition,
+    db_definition: DatabaseDefinition,
+    db_filesystem: DBFileSystem,
 }
 
 impl Database {
     pub fn new() -> Database {
-        Database {db_definition: DatabaseDefinition { tables: vec![] }}
-    }
-
-    fn get_base_path(&self) -> String {
-        shellexpand::tilde(&config::DB_PATH).to_string()
-    }
-
-    fn get_path(&self, path: &str) -> String {
-        format!("{}/{}", self.get_base_path(), path)
-    }
-
-    /**
-    * Read and deserialize the database definition file
-    */
-    pub fn load_definitions(&mut self) -> std::io::Result<()> {
-        let file = fs::File::open(self.get_path(config::TABLE_DEFINITIONS_FILE));
-        match file {
-            Ok(mut f) => {
-                let mut buffer = Vec::new();
-                f.read_to_end(&mut buffer)?;
-                self.db_definition = bincode::deserialize(buffer.as_slice()).unwrap();
-                print!("Loaded db definition: {:#?}", self.db_definition);
-                Ok(())
-            },
-            Err(e) => {
-                print!("Error while loading db definition: {:#?}", e);
-                Ok(())
-            }
+        Database {
+            db_definition: DatabaseDefinition { tables: HashMap::new() },
+            db_filesystem: DBFileSystem::new(),
         }
     }
 
-    /**
-    * Serialize and store the database definition
-    */
-    pub fn store_definitions(&self) -> std::io::Result<()> {
-        let mut file = fs::File::create(self.get_path(config::TABLE_DEFINITIONS_FILE))?;
-        file.write_all(bincode::serialize(&self.db_definition).unwrap().as_slice())?;
+    pub fn bootstrap(&mut self) -> Result<(), SystemError> {
+        self.db_filesystem.ensure_base_path()?;
+        match self.db_filesystem.load_definitions() {
+            Ok(definition) => {
+                self.db_definition = definition
+            },
+            Err(_) => {}
+        }
         Ok(())
     }
 
     /**
-    * Ensure that the database path exists
+    * Get an existing table from the definition
     */
-    pub fn ensure_base_path(&self) -> std::io::Result<()> {
-        fs::create_dir_all(&self.get_base_path())?;
-        Ok(())
+    fn get_table(&self, table_name: &str) -> Result<&asl::Table, QueryError> {
+        match self.db_definition.tables.get(table_name) {
+            Some(table) => Ok(table),
+            None => Err(QueryError::NotFound(String::from(table_name)))
+        }
     }
 
-    pub fn run_select(&self, query: asl::SelectQuery) -> Result<String, QueryError> {
+    fn run_select(&self, query: asl::SelectQuery) -> Result<String, QueryError> {
         Ok(format!("Running Select {:?}", query))
     }
 
-    pub fn run_insert(&self, query: asl::InsertQuery) -> Result<String, QueryError> {
+    fn run_insert(&self, query: asl::InsertQuery) -> Result<String, QueryError> {
+        let table = self.get_table(&query.table)?;
         Ok(format!("Running Insert {:?}", query))
     }
 
-    pub fn run_create_table(&mut self, query: asl::CreateTableQuery) -> Result<String, QueryError> {
+    fn run_create_table(&mut self, query: asl::CreateTableQuery) -> Result<String, QueryError> {
+        if self.get_table(&query.table).is_err() {
+            return Err(QueryError::Conflict(query.table))
+        }
         let result = format!("Running Create Table {:?}", query);
         let table = asl::Table {name: query.table, columns: query.columns};
-        self.db_definition.tables.push(table);
-        self.store_definitions()?;
+        self.db_filesystem.create_table_files(&table)?;
+        self.db_definition.tables.insert(table.name.clone(), table);
+        self.db_filesystem.store_definitions(&self.db_definition)?;
         Ok(result)
     }
 
-    pub fn run_drop_table(&self, query: asl::DropTableQuery) -> Result<String, QueryError> {
+    fn run_drop_table(&mut self, query: asl::DropTableQuery) -> Result<String, QueryError> {
+        self.db_filesystem.delete_table_files(self.get_table(&query.table)?)?;
+        self.db_definition.tables.remove(&query.table);
         Ok(format!("Running Drop Table {:?}", query))
     }
 
