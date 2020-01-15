@@ -58,7 +58,7 @@ impl Database {
     }
 
     fn run_create_table(&mut self, query: asl::CreateTableQuery) -> Result<String, QueryError> {
-        if self.get_table(&query.table).is_err() {
+        if self.get_table(&query.table).is_ok() {
             return Err(QueryError::Conflict(query.table))
         }
         let result = format!("Running Create Table {:?}", query);
