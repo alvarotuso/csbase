@@ -52,9 +52,37 @@ impl Database {
         Ok(format!("Running Select {:?}", query))
     }
 
+    fn validate_insert(&self, table: &asl::Table,
+                       query: &asl::InsertQuery) -> Result<(), QueryError> {
+        if query.columns.len() != query.values.len() {
+            return Err(
+                QueryError::ValidationError(
+                    String::from("The number of columns and values doesn't match")))
+        }
+        for (idx, column_name) in query.columns.iter().enumerate() {
+            let value = &query.values[idx];
+            let table_column = match table.get_column(&column_name) {
+                Some(col) => col,
+                None => return Err(QueryError::ValidationError(
+                    format!("The column {} doesn't exist in {}", column_name, table.name)))
+            };
+            if !value.has_type(&table_column.column_type) {
+                return Err(
+                    QueryError::ValidationError(
+                        format!("Incorrect value type for column {}. Expected '{:?}' and got '{:?}'",
+                                column_name, table_column.column_type, value))
+                )
+            };
+        }
+        Ok(())
+    }
+
     fn run_insert(&self, query: asl::InsertQuery) -> Result<String, QueryError> {
         let table = self.get_table(&query.table)?;
-        Ok(format!("Running Insert {:?}", query))
+        self.validate_insert(&table, &query)?;
+        let result = format!("Running Insert {:?}", query);
+        self.db_filesystem.insert_record(table, query.values)?;
+        Ok(result)
     }
 
     fn run_create_table(&mut self, query: asl::CreateTableQuery) -> Result<String, QueryError> {

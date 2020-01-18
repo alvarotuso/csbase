@@ -10,6 +10,8 @@ use crate::config::config;
 use crate::engine::db::DatabaseDefinition;
 
 
+const PAGE_SIZE : u32 = 8 * 1024;
+
 #[derive(Debug)]
 pub struct DBFileSystem {
     base_path: String,
@@ -76,8 +78,24 @@ impl DBFileSystem {
     /**
     * Insert a record into the table file
     */
-    pub fn insert_record(&self, table: &asl::Table) {
-
+    pub fn insert_record(&self, table: &asl::Table, values: Vec<asl::Value>) -> std::io::Result<()> {
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .append(true)
+            .open(self.get_table_data_path(table))?;
+        for value in values {
+            let value_bytes = value.to_be_bytes();
+            let mut value_bytes_with_length: Vec<u8> = Vec::new();
+            let value_length_bytes = (value_bytes.len() as i32).to_be_bytes().to_vec();
+            for byte in value_length_bytes {
+                value_bytes_with_length.push(byte);
+            }
+            for byte in value_bytes {
+                value_bytes_with_length.push(byte);
+            }
+            file.write(&value_bytes_with_length)?;
+        }
+        Ok(())
     }
 
     /**

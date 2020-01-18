@@ -12,6 +12,7 @@ pub enum QueryError  {
     IOError(std::io::Error),
     NotFound(String),
     Conflict(String),
+    ValidationError(String),
 }
 
 impl fmt::Display for QueryError {
