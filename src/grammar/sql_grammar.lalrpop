@@ -7,7 +7,7 @@ pub Query: asl::Query = {
         asl::Query::Select(asl::SelectQuery {table, columns, condition: Option::None}),
     "SELECT" <columns: Comma<Identifier>> "FROM" <table: Identifier> "WHERE" <condition: LogicExpression> =>
         asl::Query::Select(asl::SelectQuery {table, columns, condition: Option::Some(condition)}),
-    "INSERT INTO" <table: Identifier> "("<columns: Comma<Identifier>>") VALUES ("<values: Comma<Value>>")" =>
+    "INSERT INTO" <table: Identifier> "("<columns: Comma<Identifier>>") VALUES ("<values: Comma<Expression>>")" =>
         asl::Query::Insert(asl::InsertQuery {table, columns, values}),
     "CREATE TABLE" <table: Identifier> "("<columns: Comma<ColumnDefinition>>")" =>
         asl::Query::CreateTable(asl::CreateTableQuery {table, columns}),
@@ -28,22 +28,31 @@ Comma<T>: Vec<T> = {
 
 ColumnDefinition: asl::Column = {
     <i: Identifier> <t: Type> => asl::Column {name: i, column_type: t},
-}
+};
 
 Identifier: String = {
     <i: r"[A-Za-z][A-Za-z0-9_]*"> => String::from(i),
 };
 
 LogicExpression: Box<asl::LogicExpression> = {
-    Expression Comparator Expression => Box::new(asl::LogicExpression::Comparison(<>)),
-    LogicExpression LogicOperator LogicExpression => Box::new(asl::LogicExpression::LogicExpression(<>)),
-}
+    LogicExpression LogicOperator Comparison => Box::new(asl::LogicExpression::LogicExpression(<>)),
+    Comparison
+};
+
+Comparison: Box<asl::LogicExpression> = {
+    Expression Comparator Expression => Box::new(asl::LogicExpression::Comparison(<>))
+};
 
 Expression: Box<asl::Expression> = {
-    Expression Operator Expression => Box::new(asl::Expression::Op(<>)),
+    Expression Operator Term => Box::new(asl::Expression::Op(<>)),
+    Term
+};
+
+Term: Box<asl::Expression> = {
     Identifier => Box::new(asl::Expression::Identifier(<>)),
     Value => Box::new(asl::Expression::Value(<>)),
-}
+    "("<Expression>")",
+};
 
 Value: asl::Value = {
     <v: r"'[^']+'"> => asl::Value::Str(String::from(v)),
@@ -51,7 +60,7 @@ Value: asl::Value = {
     <v: r"[0-9]+\.[0-9]+"> => asl::Value::Float(v.parse().unwrap()),
     "true" => asl::Value::Bool(true),
     "false" => asl::Value::Bool(false),
-}
+};
 
 Type: asl::Type = {
     "STRING" => asl::Type::Str,

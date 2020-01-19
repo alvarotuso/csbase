@@ -53,14 +53,15 @@ impl Database {
     }
 
     fn validate_insert(&self, table: &asl::Table,
-                       query: &asl::InsertQuery) -> Result<(), QueryError> {
-        if query.columns.len() != query.values.len() {
+                       query: &asl::InsertQuery,
+                       evaluated_expressions: &Vec<asl::Value>) -> Result<(), QueryError> {
+        if query.columns.len() != evaluated_expressions.len() {
             return Err(
                 QueryError::ValidationError(
                     String::from("The number of columns and values doesn't match")))
         }
         for (idx, column_name) in query.columns.iter().enumerate() {
-            let value = &query.values[idx];
+            let value = &evaluated_expressions[idx];
             let table_column = match table.get_column(&column_name) {
                 Some(col) => col,
                 None => return Err(QueryError::ValidationError(
@@ -79,9 +80,10 @@ impl Database {
 
     fn run_insert(&self, query: asl::InsertQuery) -> Result<String, QueryError> {
         let table = self.get_table(&query.table)?;
-        self.validate_insert(&table, &query)?;
+        let evaluated_expressions = query.evaluate_expressions()?;
+        self.validate_insert(&table, &query, &evaluated_expressions)?;
         let result = format!("Running Insert {:?}", query);
-        self.db_filesystem.insert_record(table, query.values)?;
+        self.db_filesystem.insert_record(table, evaluated_expressions)?;
         Ok(result)
     }
 

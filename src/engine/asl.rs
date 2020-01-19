@@ -1,13 +1,15 @@
 use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+use crate::engine::errors;
+
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct Column {
     pub name: String,
     pub column_type: Type,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct Table {
     pub name: String,
     pub columns: Vec<Column>
@@ -22,13 +24,13 @@ impl Table {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ColumnValue {
     pub column: String,
     pub value: Value,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Operator {
     Add,
     Subtract,
@@ -36,7 +38,7 @@ pub enum Operator {
     Divide,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Comparator {
     Eq,
     Neq,
@@ -46,26 +48,52 @@ pub enum Comparator {
     Lte,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum LogicOperator {
     And,
     Or,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expression {
     Value(Value),
     Identifier(String),
     Op(Box<Expression>, Operator, Box<Expression>),
 }
 
-#[derive(Debug)]
+impl Expression {
+    /**
+    * Evaluates this expression. All Identifier variants must be turned into values first
+    */
+    pub fn evaluate(&self) -> Result<Value, errors::QueryError> {
+        match self {
+            Expression::Value(value) => Ok(value.clone()),
+            Expression::Identifier(_) => Err(
+                errors::QueryError::ValidationError(
+                    String::from("Evaluate called on an Expression with non replaced Identifiers")
+                )
+            ),
+            Expression::Op(exp1, operator, exp2) => {
+                let value1 = exp1.evaluate()?;
+                let value2 = exp2.evaluate()?;
+                match operator {
+                    Operator::Add => value1 + value2,
+                    Operator::Subtract => value1 - value2,
+                    Operator::Multiply => value1 * value2,
+                    Operator::Divide => value1 / value2,
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum LogicExpression {
     Comparison(Box<Expression>, Comparator, Box<Expression>),
     LogicExpression(Box<LogicExpression>, LogicOperator, Box<LogicExpression>),
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub enum Type {
     Str,
     Bool,
@@ -73,12 +101,106 @@ pub enum Type {
     Float,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug)]
+#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub enum Value {
     Str(String),
     Bool(bool),
     Int(i32),
     Float(f32),
+}
+
+impl std::ops::Div for Value {
+    type Output = Result<Self, errors::QueryError>;
+
+    fn div(self, other: Self) -> Self::Output {
+        match self {
+            Value::Int(value1) => match other {
+                Value::Int(value2) =>
+                    if value2 != 0 {
+                        Ok(Value::Float((value1 as f32) / (value2 as f32)))
+                    } else {
+                        Err(errors::QueryError::ValidationError(String::from("Division by 0")))
+                    },
+                Value::Float(value2) =>
+                    if value2 != 0.0 {
+                        Ok(Value::Float((value1 as f32) / value2))
+                    } else {
+                        Err(errors::QueryError::ValidationError(String::from("Division by 0")))
+                    },
+                _ => Err(errors::QueryError::ValidationError(String::from("Invalid types for operator"))),
+            },
+            Value::Float(value1) => match other {
+                Value::Int(value2) => Ok(Value::Float(value1 / (value2 as f32))),
+                Value::Float(value2) => Ok(Value::Float(value1 / value2)),
+                _ => Err(errors::QueryError::ValidationError(String::from("Invalid types for operator"))),
+            },
+            _ => Err(errors::QueryError::ValidationError(String::from("Invalid types for operator"))),
+        }
+    }
+}
+
+impl std::ops::Mul for Value {
+    type Output = Result<Self, errors::QueryError>;
+
+    fn mul(self, other: Self) -> Self::Output {
+        match self {
+            Value::Int(value1) => match other {
+                Value::Int(value2) => Ok(Value::Float((value1 as f32) * (value2 as f32))),
+                Value::Float(value2) => Ok(Value::Float((value1 as f32) * value2)),
+                _ => Err(errors::QueryError::ValidationError(String::from("Invalid types for operator"))),
+            },
+            Value::Float(value1) => match other {
+                Value::Int(value2) => Ok(Value::Float(value1 * (value2 as f32))),
+                Value::Float(value2) => Ok(Value::Float(value1 * value2)),
+                _ => Err(errors::QueryError::ValidationError(String::from("Invalid types for operator"))),
+            },
+            _ => Err(errors::QueryError::ValidationError(String::from("Invalid types for operator"))),
+        }
+    }
+}
+
+impl std::ops::Add for Value {
+    type Output = Result<Self, errors::QueryError>;
+
+    fn add(self, other: Self) -> Self::Output {
+        match self {
+            Value::Int(value1) => match other {
+                Value::Int(value2) => Ok(Value::Int(value1 + value2)),
+                Value::Float(value2) => Ok(Value::Float((value1 as f32) + value2)),
+                _ => Err(errors::QueryError::ValidationError(String::from("Invalid types for operator"))),
+            },
+            Value::Float(value1) => match other {
+                Value::Int(value2) => Ok(Value::Float(value1 + (value2 as f32))),
+                Value::Float(value2) => Ok(Value::Float(value1 + value2)),
+                _ => Err(errors::QueryError::ValidationError(String::from("Invalid types for operator"))),
+            },
+            Value::Str(value1) => match other {
+                Value::Str(value2) => Ok(Value::Str(value1 + &value2)),
+                _ => Err(errors::QueryError::ValidationError(String::from("Invalid types for operator"))),
+            },
+            _ => Err(errors::QueryError::ValidationError(String::from("Invalid types for operator"))),
+        }
+    }
+}
+
+impl std::ops::Sub for Value {
+    type Output = Result<Self, errors::QueryError>;
+
+    fn sub(self, other: Self) -> Self::Output {
+        match self {
+            Value::Int(value1) => match other {
+                Value::Int(value2) => Ok(Value::Int(value1- value2)),
+                Value::Float(value2) => Ok(Value::Float((value1 as f32) - value2)),
+                _ => Err(errors::QueryError::ValidationError(String::from("Invalid types for operator"))),
+            },
+            Value::Float(value1) => match other {
+                Value::Int(value2) => Ok(Value::Float(value1 - (value2 as f32))),
+                Value::Float(value2) => Ok(Value::Float(value1 - value2)),
+                _ => Err(errors::QueryError::ValidationError(String::from("Invalid types for operator"))),
+            },
+            _ => Err(errors::QueryError::ValidationError(String::from("Invalid types for operator"))),
+        }
+    }
 }
 
 impl Value {
@@ -97,26 +219,30 @@ impl Value {
     }
 
     /**
+    * Get the type of this Value
+    */
+    pub fn get_type(&self) -> Type {
+        match self {
+            Value::Str(_) => Type::Str,
+            Value::Bool(_) => Type::Bool,
+            Value::Int(_) => Type::Int,
+            Value::Float(_) => Type::Float,
+        }
+    }
+
+    /**
     * Test if a value has the provided type
     */
     pub fn has_type(&self, value_type: &Type) -> bool {
-        match value_type {
-            Type::Str => match &self {
-                Value::Str(_) => true,
-                _ => false,
-            },
-            Type::Bool => match &self {
-                Value::Bool(_) => true,
-                _ => false,
-            },
-            Type::Int => match &self {
-                Value::Int(_) => true,
-                _ => false,
-            },
-            Type::Float => match &self {
-                Value::Float(_) => true,
-                _ => false,
-            },
+        if let
+            (Type::Str, Type::Str) |
+            (Type::Bool, Type::Bool) |
+            (Type::Int, Type::Int) |
+            (Type::Float, Type::Float)
+        = (self.get_type(), value_type) {
+            true
+        } else {
+            false
         }
     }
 
@@ -133,43 +259,53 @@ impl Value {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SelectQuery {
     pub table: String,
     pub columns: Vec<String>,
     pub condition: Option<Box<LogicExpression>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct InsertQuery {
     pub table: String,
     pub columns: Vec<String>,
-    pub values: Vec<Value>,
+    pub values: Vec<Box<Expression>>,
 }
 
-#[derive(Debug)]
+impl InsertQuery {
+    pub fn evaluate_expressions(&self) -> Result<Vec<Value>, errors::QueryError> {
+        let mut evaluated_expressions = Vec::new();
+        for expression in &self.values {
+            evaluated_expressions.push((*expression).evaluate()?);
+        }
+        Ok(evaluated_expressions)
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct UpdateQuery {
     pub table: String,
     pub column_values: Vec<ColumnValue>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DeleteQuery {
     pub table: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CreateTableQuery {
     pub table: String,
     pub columns: Vec<Column>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DropTableQuery {
     pub table: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Query {
     Select(SelectQuery),
     Insert(InsertQuery),
