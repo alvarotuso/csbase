@@ -43,9 +43,17 @@ Comparison: Box<asl::LogicExpression> = {
     Expression Comparator Expression => Box::new(asl::LogicExpression::Comparison(<>))
 };
 
+
+// Expression codification. Operators are divided into expressions and factors to encode multiplication
+// and division precedence. The same logic can be applied for boolean precedence.
 Expression: Box<asl::Expression> = {
-    Expression Operator Term => Box::new(asl::Expression::Op(<>)),
-    Term
+    Expression ExpressionOperator Factor => Box::new(asl::Expression::Op(<>)),
+    Factor
+};
+
+Factor: Box<asl::Expression> = {
+    Factor FactorOperator Term => Box::new(asl::Expression::Op(<>)),
+    Term,
 };
 
 Term: Box<asl::Expression> = {
@@ -69,9 +77,12 @@ Type: asl::Type = {
     "BOOL" => asl::Type::Bool,
 }
 
-Operator: asl::Operator = {
+ExpressionOperator: asl::Operator = {
     "+" => asl::Operator::Add,
     "-" => asl::Operator::Subtract,
+}
+
+FactorOperator: asl::Operator = {
     "*" => asl::Operator::Multiply,
     "/" => asl::Operator::Divide,
 }

@@ -145,7 +145,7 @@ impl std::ops::Mul for Value {
     fn mul(self, other: Self) -> Self::Output {
         match self {
             Value::Int(value1) => match other {
-                Value::Int(value2) => Ok(Value::Float((value1 as f32) * (value2 as f32))),
+                Value::Int(value2) => Ok(Value::Int(value1 * value2)),
                 Value::Float(value2) => Ok(Value::Float((value1 as f32) * value2)),
                 _ => Err(errors::QueryError::ValidationError(String::from("Invalid types for operator"))),
             },

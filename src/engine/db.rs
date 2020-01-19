@@ -85,6 +85,7 @@ impl Database {
     fn run_insert(&self, query: asl::InsertQuery) -> Result<String, QueryError> {
         let table = self.get_table(&query.table)?;
         let evaluated_expressions = query.evaluate_expressions()?;
+        print!("Evaluated expressions: {:?}", evaluated_expressions);
         self.validate_insert(&table, &query, &evaluated_expressions)?;
         let result = format!("Running Insert {:?}", query);
         self.db_filesystem.insert_record(table, evaluated_expressions)?;
