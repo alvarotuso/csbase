@@ -49,11 +49,6 @@ LogicTerm: Box<asl::LogicExpression> = {
     "("<LogicExpression>")",
 };
 
-Comparison: Box<asl::LogicExpression> = {
-
-};
-
-
 // Expression codification. Operators are divided into expressions and factors to encode multiplication
 // and division precedence. The same logic can be applied for boolean precedence.
 Expression: Box<asl::Expression> = {
