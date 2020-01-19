@@ -48,6 +48,10 @@ impl Database {
         }
     }
 
+    fn validate_select(&self, query: asl::SelectQuery) -> Result<(), QueryError> {
+        Ok(())
+    }
+
     fn run_select(&self, query: asl::SelectQuery) -> Result<String, QueryError> {
         Ok(format!("Running Select {:?}", query))
     }
