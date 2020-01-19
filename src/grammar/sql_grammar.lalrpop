@@ -35,12 +35,22 @@ Identifier: String = {
 };
 
 LogicExpression: Box<asl::LogicExpression> = {
-    LogicExpression LogicOperator Comparison => Box::new(asl::LogicExpression::LogicExpression(<>)),
-    Comparison
+    LogicExpression LogicOrOperator LogicFactor => Box::new(asl::LogicExpression::LogicExpression(<>)),
+    LogicFactor
+};
+
+LogicFactor: Box<asl::LogicExpression> = {
+    LogicFactor LogicAndOperator LogicTerm => Box::new(asl::LogicExpression::LogicExpression(<>)),
+    LogicTerm
+};
+
+LogicTerm: Box<asl::LogicExpression> = {
+    Expression Comparator Expression => Box::new(asl::LogicExpression::Comparison(<>)),
+    "("<LogicExpression>")",
 };
 
 Comparison: Box<asl::LogicExpression> = {
-    Expression Comparator Expression => Box::new(asl::LogicExpression::Comparison(<>))
+
 };
 
 
@@ -96,7 +106,10 @@ Comparator: asl::Comparator = {
     "<=" => asl::Comparator::Lte,
 }
 
-LogicOperator: asl::LogicOperator = {
+LogicAndOperator: asl::LogicOperator = {
     "AND" => asl::LogicOperator::And,
+}
+
+LogicOrOperator: asl::LogicOperator = {
     "OR" => asl::LogicOperator::Or,
 }
