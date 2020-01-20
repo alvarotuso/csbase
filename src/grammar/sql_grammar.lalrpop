@@ -5,9 +5,9 @@ grammar;
 pub Query: asl::Query = {
     "SELECT" <columns: Comma<Identifier>> "FROM" <table: Identifier> =>
         asl::Query::Select(asl::SelectQuery {table, columns, condition: Option::None}),
-    "SELECT" <columns: Comma<Identifier>> "FROM" <table: Identifier> "WHERE" <condition: LogicExpression> =>
+    "SELECT" <columns: Comma<Identifier>> "FROM" <table: Identifier> "WHERE" <condition: ExpressionMixin> =>
         asl::Query::Select(asl::SelectQuery {table, columns, condition: Option::Some(condition)}),
-    "INSERT INTO" <table: Identifier> "("<columns: Comma<Identifier>>") VALUES ("<values: Comma<Expression>>")" =>
+    "INSERT INTO" <table: Identifier> "("<columns: Comma<Identifier>>") VALUES ("<values: Comma<ExpressionMixin>>")" =>
         asl::Query::Insert(asl::InsertQuery {table, columns, values}),
     "CREATE TABLE" <table: Identifier> "("<columns: Comma<ColumnDefinition>>")" =>
         asl::Query::CreateTable(asl::CreateTableQuery {table, columns}),
@@ -34,6 +34,14 @@ Identifier: String = {
     <i: r"[A-Za-z][A-Za-z0-9_]*"> => String::from(i),
 };
 
+// A mixin that represents both boolean and standard expressions
+ExpressionMixin: Box<asl::Expression> = {
+    LogicExpression,
+    Expression,
+}
+
+// Boolean expression codification. Operators are divided into expressions and factors to encode AND
+// precedence.
 LogicExpression: Box<asl::Expression> = {
     LogicExpression LogicOrOperator LogicFactor => Box::new(asl::Expression::LogicOp(<>)),
     LogicFactor
@@ -50,7 +58,7 @@ LogicTerm: Box<asl::Expression> = {
 };
 
 // Expression codification. Operators are divided into expressions and factors to encode multiplication
-// and division precedence. The same logic can be applied for boolean precedence.
+// and division precedence.
 Expression: Box<asl::Expression> = {
     Expression ExpressionOperator Factor => Box::new(asl::Expression::Op(<>)),
     Factor,
