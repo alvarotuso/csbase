@@ -59,6 +59,8 @@ pub enum Expression {
     Value(Value),
     Identifier(String),
     Op(Box<Expression>, Operator, Box<Expression>),
+    Comp(Box<Expression>, Comparator, Box<Expression>),
+    LogicOp(Box<Expression>, LogicOperator, Box<Expression>)
 }
 
 impl Expression {
@@ -82,15 +84,29 @@ impl Expression {
                     Operator::Multiply => value1 * value2,
                     Operator::Divide => value1 / value2,
                 }
+            },
+            Expression::Comp(exp1, comparator, exp2) => {
+                let value1 = exp1.evaluate()?;
+                let value2 = exp2.evaluate()?;
+                match comparator {
+                    Comparator::Eq => value1 == value2,
+                    Comparator::Neq => value1 != value2,
+                    Comparator::Gt => value1 > value2,
+                    Comparator::Gte => value1 >= value2,
+                    Comparator::Lt => value1 < value2,
+                    Comparator::Lte => value1 <= value2,
+                }
+            },
+            Expression::LogicOp(exp1, logic_operator, exp2) => {
+                let value1 = exp1.evaluate()?;
+                let value2 = exp2.evaluate()?;
+                match logic_operator {
+                    LogicOperator::And => value1 && value2,
+                    LogicOperator::Or => value1 || value2,
+                }
             }
         }
     }
-}
-
-#[derive(Debug, Clone)]
-pub enum LogicExpression {
-    Comparison(Box<Expression>, Comparator, Box<Expression>),
-    LogicExpression(Box<LogicExpression>, LogicOperator, Box<LogicExpression>),
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
@@ -101,7 +117,7 @@ pub enum Type {
     Float,
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Value {
     Str(String),
     Bool(bool),
@@ -199,6 +215,55 @@ impl std::ops::Sub for Value {
                 _ => Err(errors::QueryError::ValidationError(String::from("Invalid types for operator"))),
             },
             _ => Err(errors::QueryError::ValidationError(String::from("Invalid types for operator"))),
+        }
+    }
+}
+
+impl std::cmp::PartialEq for Value {
+    fn eq(&self, other: Self) -> bool {
+        match self {
+            Value::Int(value1) => match other {
+                Value::Int(value2) => value1 == value2,
+                Value::Float(value2) => (value1 as f32) == value2,
+                _ => false,
+            },
+            Value::Float(value1) => match other {
+                Value::Int(value2) => value1 == (value2 as f32),
+                Value::Float(value2) => value1  == value2,
+                _ => false,
+            },
+            Value::Str(value1) => match other {
+                Value::Str(value2) => value1 == value2,
+                _ => false,
+            },
+            Value::Bool(value1) => match other {
+                Value::Bool(value2) => value1 == value2,
+                _ => false,
+            },
+        }
+    }
+}
+
+impl std::cmp::PartialOrd for Value {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        match self {
+            Value::Int(value1) => match other {
+                Value::Int(value2) => Some(value1.cmp(value2)),
+                Value::Float(value2) => Some((value1 as f32).cmp(value2)),
+                _ => None,
+            },
+            Value::Float(value1) => match other {
+                Value::Int(value2) => Some(value1.cmp((value2 as &&f32))),
+                Value::Float(value2) => Some(value1.cmp(&value2)),
+                _ => None,
+            },
+            Value::Str(value1) => match other {
+                Value::Str(value2) => Some(value1.cmp(value2)),
+                _ => None,
+            },
+            Value::Bool(value1) => match other {
+                _ => None,
+            },
         }
     }
 }
