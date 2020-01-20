@@ -97,19 +97,5 @@ impl DBFileSystem {
         }
         Ok(())
     }
-
-    /**
-    * Update a record from the table file
-    */
-    pub fn update_record(&self, table: &asl::Table) {
-
-    }
-
-    /**
-    * Delete a record from the table file
-    */
-    pub fn delete_record(&self, table: &asl::Table) {
-
-    }
 }
 

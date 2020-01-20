@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 
 use crate::engine::errors;
@@ -88,22 +87,26 @@ impl Expression {
             Expression::Comp(exp1, comparator, exp2) => {
                 let value1 = exp1.evaluate()?;
                 let value2 = exp2.evaluate()?;
-                match comparator {
-                    Comparator::Eq => value1 == value2,
-                    Comparator::Neq => value1 != value2,
-                    Comparator::Gt => value1 > value2,
-                    Comparator::Gte => value1 >= value2,
-                    Comparator::Lt => value1 < value2,
-                    Comparator::Lte => value1 <= value2,
-                }
+                Ok(Value::Bool(
+                    match comparator {
+                        Comparator::Eq => value1 == value2,
+                        Comparator::Neq => value1 != value2,
+                        Comparator::Gt => value1 > value2,
+                        Comparator::Gte => value1 >= value2,
+                        Comparator::Lt => value1 < value2,
+                        Comparator::Lte => value1 <= value2,
+                    }
+                ))
             },
             Expression::LogicOp(exp1, logic_operator, exp2) => {
-                let value1 = exp1.evaluate()?;
-                let value2 = exp2.evaluate()?;
-                match logic_operator {
-                    LogicOperator::And => value1 && value2,
-                    LogicOperator::Or => value1 || value2,
-                }
+                let value1 = exp1.evaluate()?.get_bool()?;
+                let value2 = exp2.evaluate()?.get_bool()?;
+                Ok(Value::Bool(
+                    match logic_operator {
+                        LogicOperator::And => value1 && value2,
+                        LogicOperator::Or => value1 || value2,
+                    }
+                ))
             }
         }
     }
@@ -220,16 +223,16 @@ impl std::ops::Sub for Value {
 }
 
 impl std::cmp::PartialEq for Value {
-    fn eq(&self, other: Self) -> bool {
+    fn eq(&self, other: &Self) -> bool {
         match self {
             Value::Int(value1) => match other {
                 Value::Int(value2) => value1 == value2,
-                Value::Float(value2) => (value1 as f32) == value2,
+                Value::Float(value2) => (*value1 as f32) == *value2,
                 _ => false,
             },
             Value::Float(value1) => match other {
-                Value::Int(value2) => value1 == (value2 as f32),
-                Value::Float(value2) => value1  == value2,
+                Value::Int(value2) => *value1 == (*value2 as f32),
+                Value::Float(value2) => *value1  == *value2,
                 _ => false,
             },
             Value::Str(value1) => match other {
@@ -249,21 +252,19 @@ impl std::cmp::PartialOrd for Value {
         match self {
             Value::Int(value1) => match other {
                 Value::Int(value2) => Some(value1.cmp(value2)),
-                Value::Float(value2) => Some((value1 as f32).cmp(value2)),
+                Value::Float(value2) => Some(value1.cmp(&(*value2 as i32))),
                 _ => None,
             },
             Value::Float(value1) => match other {
-                Value::Int(value2) => Some(value1.cmp((value2 as &&f32))),
-                Value::Float(value2) => Some(value1.cmp(&value2)),
+                Value::Int(value2) => value1.partial_cmp(&(*value2 as f32)),
+                Value::Float(value2) => value1.partial_cmp(&value2),
                 _ => None,
             },
             Value::Str(value1) => match other {
                 Value::Str(value2) => Some(value1.cmp(value2)),
                 _ => None,
             },
-            Value::Bool(value1) => match other {
-                _ => None,
-            },
+            Value::Bool(_) => None,
         }
     }
 }
@@ -322,13 +323,20 @@ impl Value {
             Value::Bool(val) => (if val { 1u8 } else { 0u8 }).to_be_bytes().to_vec(),
         }
     }
+
+    pub fn get_bool(&self) -> Result<bool, errors::QueryError> {
+        match self {
+            Value::Bool(value) => Ok(value.clone()),
+            _ => Err(errors::QueryError::ValidationError(String::from("Value is not boolean")))
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct SelectQuery {
     pub table: String,
     pub columns: Vec<String>,
-    pub condition: Option<Box<LogicExpression>>,
+    pub condition: Option<Box<Expression>>,
 }
 
 #[derive(Debug, Clone)]
