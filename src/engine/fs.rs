@@ -117,15 +117,17 @@ impl DBFileSystem {
         while file.read(&mut buffer)? > 0 {
             let mut offset = 0;
             while offset < buffer.len() {
-                if offset + current_target_bytes as usize + 1 > buffer.len() {
+                if offset + current_target_bytes as usize > buffer.len() {
                     carryover = true;
-                    carryover_bytes = Vec::new();
-                    carryover_bytes.extend_from_slice(&buffer[offset..buffer.len()]);
+                    let remaining_buffer_bytes = &buffer[offset..buffer.len()];
+                    carryover_bytes.extend_from_slice(remaining_buffer_bytes);
+                    current_target_bytes -= remaining_buffer_bytes.len() as i32;
                     break;
                 }
                 if carryover {
-                    carryover_bytes.extend_from_slice(&buffer[offset..offset + current_target_bytes as usize]);
-                    current_token = &carryover_bytes;
+                    let remaining_token_bytes = &buffer[offset..offset + current_target_bytes as usize];
+                    carryover_bytes.extend_from_slice(remaining_token_bytes);
+                    current_token = carryover_bytes.as_slice();
                 } else {
                     current_token = &buffer[offset..offset + current_target_bytes as usize];
                 }
@@ -154,6 +156,8 @@ impl DBFileSystem {
                     reading_size = true;
                     current_target_bytes = U32_SIZE_BYTES;
                 }
+                carryover = false;
+                carryover_bytes = Vec::new();
             }
         }
         Ok(records)
