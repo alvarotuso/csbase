@@ -273,7 +273,7 @@ impl Value {
     /**
     * Build value from bytes
     */
-    pub fn from_be_bytes(value_type: &Type, bytes: Vec<u8>) -> Value {
+    pub fn from_be_bytes(bytes: Vec<u8>, value_type: &Type) -> Value {
         match value_type {
             Type::Str => Value::Str(String::from_utf8(bytes).unwrap()),
             Type::Bool => Value::Bool(if bytes[0] == 1u8 { true } else { false }),

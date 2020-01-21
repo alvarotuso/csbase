@@ -53,7 +53,10 @@ impl Database {
     }
 
     fn run_select(&self, query: asl::SelectQuery) -> Result<String, QueryError> {
-        Ok(format!("Running Select {:?}", query))
+        let table = self.get_table(&query.table)?;
+        let records = self.db_filesystem.select_records(table,
+                                                        &query.columns, &query.condition)?;
+        Ok(format!("Found Records {:?}", records))
     }
 
     fn validate_insert(&self, table: &asl::Table,

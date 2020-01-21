@@ -10,7 +10,8 @@ use crate::config::config;
 use crate::engine::db::DatabaseDefinition;
 
 
-const PAGE_SIZE : u32 = 8 * 1024;
+const PAGE_SIZE : usize = 8 * 1024;
+const U32_SIZE_BYTES : i32 = 4;
 
 #[derive(Debug)]
 pub struct DBFileSystem {
@@ -96,6 +97,66 @@ impl DBFileSystem {
             file.write(&value_bytes_with_length)?;
         }
         Ok(())
+    }
+
+
+    /**
+    * Find records in the table file that match the given condition
+    */
+    pub fn select_records(&self, table: &asl::Table, columns: &Vec<String>,
+                          condition: &Option<Box<asl::Expression>>) -> std::io::Result<Vec<Vec<asl::Value>>> {
+        let mut file = fs::File::open(self.get_table_data_path(table))?;
+        let mut buffer = [0; PAGE_SIZE];
+        let mut records: Vec<Vec<asl::Value>> = Vec::new();
+        let mut current_record: Vec<asl::Value> = Vec::new();
+        let mut current_token: &[u8];
+        let mut carryover_bytes = Vec::new();
+        let mut current_target_bytes: i32 = U32_SIZE_BYTES;
+        let mut reading_size = true;
+        let mut carryover = false;
+        while file.read(&mut buffer)? > 0 {
+            let mut offset = 0;
+            while offset < buffer.len() {
+                if offset + current_target_bytes as usize + 1 > buffer.len() {
+                    carryover = true;
+                    carryover_bytes = Vec::new();
+                    carryover_bytes.extend_from_slice(&buffer[offset..buffer.len()]);
+                    break;
+                }
+                if carryover {
+                    carryover_bytes.extend_from_slice(&buffer[offset..offset + current_target_bytes as usize]);
+                    current_token = &carryover_bytes;
+                } else {
+                    current_token = &buffer[offset..offset + current_target_bytes as usize];
+                }
+                if current_token.len() == 0 {
+                    break;  // there are no more records in this buffer
+                }
+
+                offset += current_target_bytes as usize;
+                if reading_size {
+                    let mut size_bytes: [u8; 4] = Default::default();
+                    size_bytes.copy_from_slice(&current_token[0..4]);
+                    current_target_bytes = i32::from_be_bytes(size_bytes);
+                    reading_size = false;
+                } else {
+                    let value_type = &table.columns[current_record.len()].column_type;
+                    current_record.push(
+                        asl::Value::from_be_bytes(
+                            Vec::from(current_token),
+                            value_type
+                        )
+                    );
+                    if current_record.len() == table.columns.len() {
+                        records.push(current_record);
+                        current_record = Vec::new();
+                    }
+                    reading_size = true;
+                    current_target_bytes = U32_SIZE_BYTES;
+                }
+            }
+        }
+        Ok(records)
     }
 }
 
