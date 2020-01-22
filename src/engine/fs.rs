@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::fs;
 use std::io::{Read, Write};
 
@@ -6,6 +7,7 @@ use shellexpand;
 
 use crate::engine::asl;
 use crate::engine::db;
+use crate::engine::errors::QueryError;
 use crate::config::config;
 use crate::engine::db::DatabaseDefinition;
 
@@ -34,7 +36,7 @@ impl DBFileSystem {
     /**
     * Read and deserialize the database definition file
     */
-    pub fn load_definitions(&self) -> std::io::Result<db::DatabaseDefinition> {
+    pub fn load_definitions(&self) -> Result<db::DatabaseDefinition, QueryError> {
         let mut file = fs::File::open(self.get_path(config::TABLE_DEFINITIONS_FILE))?;
         let mut buffer = Vec::new();
         file.read_to_end(&mut buffer)?;
@@ -46,7 +48,7 @@ impl DBFileSystem {
     /**
     * Serialize and store the database definition
     */
-    pub fn store_definitions(&self, db_definition: &DatabaseDefinition) -> std::io::Result<()> {
+    pub fn store_definitions(&self, db_definition: &DatabaseDefinition) -> Result<(), QueryError> {
         let mut file = fs::File::create(self.get_path(config::TABLE_DEFINITIONS_FILE))?;
         file.write_all(bincode::serialize(db_definition).unwrap().as_slice())?;
         Ok(())
@@ -55,7 +57,7 @@ impl DBFileSystem {
     /**
     * Create table files in the local filesystem
     */
-    pub fn create_table_files(&self, table: &asl::Table) -> std::io::Result<()> {
+    pub fn create_table_files(&self, table: &asl::Table) -> Result<(), QueryError> {
         fs::File::create(self.get_table_data_path(table))?;
         Ok(())
     }
@@ -63,7 +65,7 @@ impl DBFileSystem {
     /**
     * Delete table files from the local filesystem
     */
-    pub fn delete_table_files(&self, table: &asl::Table) -> std::io::Result<()> {
+    pub fn delete_table_files(&self, table: &asl::Table) -> Result<(), QueryError> {
         fs::remove_file(self.get_table_data_path(table))?;
         Ok(())
     }
@@ -79,7 +81,7 @@ impl DBFileSystem {
     /**
     * Insert a record into the table file
     */
-    pub fn insert_record(&self, table: &asl::Table, values: Vec<asl::Value>) -> std::io::Result<()> {
+    pub fn insert_record(&self, table: &asl::Table, values: Vec<asl::Value>) -> Result<(), QueryError> {
         let mut file = fs::OpenOptions::new()
             .write(true)
             .append(true)
@@ -104,7 +106,7 @@ impl DBFileSystem {
     * Find records in the table file that match the given condition
     */
     pub fn select_records(&self, table: &asl::Table, columns: &Vec<String>,
-                          condition: &Option<Box<asl::Expression>>) -> std::io::Result<Vec<Vec<asl::Value>>> {
+                          condition: &Option<Box<asl::Expression>>) -> Result<Vec<Vec<asl::Value>>, QueryError> {
         let mut file = fs::File::open(self.get_table_data_path(table))?;
         let mut buffer = [0; PAGE_SIZE];
         let mut records: Vec<Vec<asl::Value>> = Vec::new();
@@ -150,7 +152,19 @@ impl DBFileSystem {
                         )
                     );
                     if current_record.len() == table.columns.len() {
-                        records.push(current_record);
+                        let include_record = match condition {
+                            Some(condition) => {
+                                let identifier_values: HashMap<String, asl::Value> =
+                                    current_record.iter().enumerate()
+                                        .map(|(idx, value)| (table.columns[idx].name.clone(), value.clone()))
+                                        .collect();
+                                condition.evaluate(Option::Some(&identifier_values))? == asl::Value::Bool(true)
+                            }
+                            None => true
+                        };
+                        if include_record {
+                            records.push(current_record);
+                        }
                         current_record = Vec::new();
                     }
                     reading_size = true;

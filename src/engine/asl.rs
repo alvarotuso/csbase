@@ -1,6 +1,7 @@
+use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 
-use crate::engine::errors;
+use crate::engine::errors::QueryError;
 
 #[derive(Serialize, Deserialize, PartialEq, Debug, Clone)]
 pub struct Column {
@@ -66,17 +67,21 @@ impl Expression {
     /**
     * Evaluates this expression. All Identifier variants must be turned into values first
     */
-    pub fn evaluate(&self) -> Result<Value, errors::QueryError> {
+    pub fn evaluate(&self, identifier_values: Option<&HashMap<String, Value>>) -> Result<Value, QueryError> {
         match self {
             Expression::Value(value) => Ok(value.clone()),
-            Expression::Identifier(_) => Err(
-                errors::QueryError::ValidationError(
-                    String::from("Evaluate called on an Expression with non replaced Identifiers")
-                )
-            ),
+            Expression::Identifier(name) => match identifier_values {
+                Some(identifier_values) => match identifier_values.get(name) {
+                    Some(value) => Ok(value.clone()),
+                    None => Err(QueryError::ValidationError(
+                        format!("Identifier {} not present in provided values", name)))
+                },
+                None => Err(QueryError::ValidationError(String::from(
+                    "Identifier values not provided but they were used in this expression")))
+            },
             Expression::Op(exp1, operator, exp2) => {
-                let value1 = exp1.evaluate()?;
-                let value2 = exp2.evaluate()?;
+                let value1 = exp1.evaluate(identifier_values)?;
+                let value2 = exp2.evaluate(identifier_values)?;
                 match operator {
                     Operator::Add => value1 + value2,
                     Operator::Subtract => value1 - value2,
@@ -85,8 +90,8 @@ impl Expression {
                 }
             },
             Expression::Comp(exp1, comparator, exp2) => {
-                let value1 = exp1.evaluate()?;
-                let value2 = exp2.evaluate()?;
+                let value1 = exp1.evaluate(identifier_values)?;
+                let value2 = exp2.evaluate(identifier_values)?;
                 Ok(Value::Bool(
                     match comparator {
                         Comparator::Eq => value1 == value2,
@@ -99,8 +104,8 @@ impl Expression {
                 ))
             },
             Expression::LogicOp(exp1, logic_operator, exp2) => {
-                let value1 = exp1.evaluate()?.get_bool()?;
-                let value2 = exp2.evaluate()?.get_bool()?;
+                let value1 = exp1.evaluate(identifier_values)?.get_bool()?;
+                let value2 = exp2.evaluate(identifier_values)?.get_bool()?;
                 Ok(Value::Bool(
                     match logic_operator {
                         LogicOperator::And => value1 && value2,
@@ -129,7 +134,7 @@ pub enum Value {
 }
 
 impl std::ops::Div for Value {
-    type Output = Result<Self, errors::QueryError>;
+    type Output = Result<Self, QueryError>;
 
     fn div(self, other: Self) -> Self::Output {
         match self {
@@ -138,86 +143,86 @@ impl std::ops::Div for Value {
                     if value2 != 0 {
                         Ok(Value::Float((value1 as f32) / (value2 as f32)))
                     } else {
-                        Err(errors::QueryError::ValidationError(String::from("Division by 0")))
+                        Err(QueryError::ValidationError(String::from("Division by 0")))
                     },
                 Value::Float(value2) =>
                     if value2 != 0.0 {
                         Ok(Value::Float((value1 as f32) / value2))
                     } else {
-                        Err(errors::QueryError::ValidationError(String::from("Division by 0")))
+                        Err(QueryError::ValidationError(String::from("Division by 0")))
                     },
-                _ => Err(errors::QueryError::ValidationError(String::from("Invalid types for operator"))),
+                _ => Err(QueryError::ValidationError(String::from("Invalid types for operator"))),
             },
             Value::Float(value1) => match other {
                 Value::Int(value2) => Ok(Value::Float(value1 / (value2 as f32))),
                 Value::Float(value2) => Ok(Value::Float(value1 / value2)),
-                _ => Err(errors::QueryError::ValidationError(String::from("Invalid types for operator"))),
+                _ => Err(QueryError::ValidationError(String::from("Invalid types for operator"))),
             },
-            _ => Err(errors::QueryError::ValidationError(String::from("Invalid types for operator"))),
+            _ => Err(QueryError::ValidationError(String::from("Invalid types for operator"))),
         }
     }
 }
 
 impl std::ops::Mul for Value {
-    type Output = Result<Self, errors::QueryError>;
+    type Output = Result<Self, QueryError>;
 
     fn mul(self, other: Self) -> Self::Output {
         match self {
             Value::Int(value1) => match other {
                 Value::Int(value2) => Ok(Value::Int(value1 * value2)),
                 Value::Float(value2) => Ok(Value::Float((value1 as f32) * value2)),
-                _ => Err(errors::QueryError::ValidationError(String::from("Invalid types for operator"))),
+                _ => Err(QueryError::ValidationError(String::from("Invalid types for operator"))),
             },
             Value::Float(value1) => match other {
                 Value::Int(value2) => Ok(Value::Float(value1 * (value2 as f32))),
                 Value::Float(value2) => Ok(Value::Float(value1 * value2)),
-                _ => Err(errors::QueryError::ValidationError(String::from("Invalid types for operator"))),
+                _ => Err(QueryError::ValidationError(String::from("Invalid types for operator"))),
             },
-            _ => Err(errors::QueryError::ValidationError(String::from("Invalid types for operator"))),
+            _ => Err(QueryError::ValidationError(String::from("Invalid types for operator"))),
         }
     }
 }
 
 impl std::ops::Add for Value {
-    type Output = Result<Self, errors::QueryError>;
+    type Output = Result<Self, QueryError>;
 
     fn add(self, other: Self) -> Self::Output {
         match self {
             Value::Int(value1) => match other {
                 Value::Int(value2) => Ok(Value::Int(value1 + value2)),
                 Value::Float(value2) => Ok(Value::Float((value1 as f32) + value2)),
-                _ => Err(errors::QueryError::ValidationError(String::from("Invalid types for operator"))),
+                _ => Err(QueryError::ValidationError(String::from("Invalid types for operator"))),
             },
             Value::Float(value1) => match other {
                 Value::Int(value2) => Ok(Value::Float(value1 + (value2 as f32))),
                 Value::Float(value2) => Ok(Value::Float(value1 + value2)),
-                _ => Err(errors::QueryError::ValidationError(String::from("Invalid types for operator"))),
+                _ => Err(QueryError::ValidationError(String::from("Invalid types for operator"))),
             },
             Value::Str(value1) => match other {
                 Value::Str(value2) => Ok(Value::Str(value1 + &value2)),
-                _ => Err(errors::QueryError::ValidationError(String::from("Invalid types for operator"))),
+                _ => Err(QueryError::ValidationError(String::from("Invalid types for operator"))),
             },
-            _ => Err(errors::QueryError::ValidationError(String::from("Invalid types for operator"))),
+            _ => Err(QueryError::ValidationError(String::from("Invalid types for operator"))),
         }
     }
 }
 
 impl std::ops::Sub for Value {
-    type Output = Result<Self, errors::QueryError>;
+    type Output = Result<Self, QueryError>;
 
     fn sub(self, other: Self) -> Self::Output {
         match self {
             Value::Int(value1) => match other {
                 Value::Int(value2) => Ok(Value::Int(value1- value2)),
                 Value::Float(value2) => Ok(Value::Float((value1 as f32) - value2)),
-                _ => Err(errors::QueryError::ValidationError(String::from("Invalid types for operator"))),
+                _ => Err(QueryError::ValidationError(String::from("Invalid types for operator"))),
             },
             Value::Float(value1) => match other {
                 Value::Int(value2) => Ok(Value::Float(value1 - (value2 as f32))),
                 Value::Float(value2) => Ok(Value::Float(value1 - value2)),
-                _ => Err(errors::QueryError::ValidationError(String::from("Invalid types for operator"))),
+                _ => Err(QueryError::ValidationError(String::from("Invalid types for operator"))),
             },
-            _ => Err(errors::QueryError::ValidationError(String::from("Invalid types for operator"))),
+            _ => Err(QueryError::ValidationError(String::from("Invalid types for operator"))),
         }
     }
 }
@@ -324,10 +329,10 @@ impl Value {
         }
     }
 
-    pub fn get_bool(&self) -> Result<bool, errors::QueryError> {
+    pub fn get_bool(&self) -> Result<bool, QueryError> {
         match self {
             Value::Bool(value) => Ok(value.clone()),
-            _ => Err(errors::QueryError::ValidationError(String::from("Value is not boolean")))
+            _ => Err(QueryError::ValidationError(String::from("Value is not boolean")))
         }
     }
 }
@@ -347,10 +352,10 @@ pub struct InsertQuery {
 }
 
 impl InsertQuery {
-    pub fn evaluate_expressions(&self) -> Result<Vec<Value>, errors::QueryError> {
+    pub fn evaluate_expressions(&self) -> Result<Vec<Value>, QueryError> {
         let mut evaluated_expressions = Vec::new();
         for expression in &self.values {
-            evaluated_expressions.push((*expression).evaluate()?);
+            evaluated_expressions.push((*expression).evaluate(Option::None)?);
         }
         Ok(evaluated_expressions)
     }
