@@ -123,6 +123,7 @@ pub enum Type {
     Bool,
     Int,
     Float,
+    Null,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -131,6 +132,7 @@ pub enum Value {
     Bool(bool),
     Int(i32),
     Float(f32),
+    Null,
 }
 
 impl std::ops::Div for Value {
@@ -248,6 +250,7 @@ impl std::cmp::PartialEq for Value {
                 Value::Bool(value2) => value1 == value2,
                 _ => false,
             },
+            Value::Null => false,
         }
     }
 }
@@ -270,6 +273,7 @@ impl std::cmp::PartialOrd for Value {
                 _ => None,
             },
             Value::Bool(_) => None,
+            Value::Null => None,
         }
     }
 }
@@ -286,6 +290,7 @@ impl Value {
                 [bytes[0], bytes[1], bytes[2], bytes[3]])),
             Type::Float => Value::Float(f32::from_be_bytes(
                 [bytes[0], bytes[1], bytes[2], bytes[3]])),
+            Type::Null => Value::Null,
         }
     }
 
@@ -298,6 +303,7 @@ impl Value {
             Value::Bool(_) => Type::Bool,
             Value::Int(_) => Type::Int,
             Value::Float(_) => Type::Float,
+            Value::Null => Type::Null,
         }
     }
 
@@ -326,6 +332,7 @@ impl Value {
             Value::Int(val) => val.to_be_bytes().to_vec(),
             Value::Float(val) => val.to_be_bytes().to_vec(),
             Value::Bool(val) => (if val { 1u8 } else { 0u8 }).to_be_bytes().to_vec(),
+            Value::Null => Vec::new(),
         }
     }
 
