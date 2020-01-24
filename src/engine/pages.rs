@@ -17,12 +17,17 @@ impl Page {
         Page { id, data: [0; PAGE_DATA_SIZE], free_space_start: 0, free_space_end: PAGE_DATA_SIZE }
     }
 
-    fn get_item_offsets(&self) -> Vec<usize> {
+    fn get_item_offset_and_sizes(&self) -> Vec<(usize, usize)> {
         let mut item_offsets = Vec::new();
         let mut current_offset = 0;
         while current_offset < self.free_space_start {
-            item_offsets.push(usize::from_be_bytes(self.data[current_offset..USIZE_SIZE]));
-            current_offset += USIZE_SIZE;
+            let size_offset = current_offset + USIZE_SIZE;
+            let size_end = size_offset + USIZE_SIZE;
+            item_offsets.push((
+                usize::from_be_bytes(self.data[current_offset..size_offset]),
+                usize::from_be_bytes(self.data[size_offset..size_end]),
+            ));
+            current_offset = size_end;
         }
         item_offsets
     }
@@ -36,4 +41,8 @@ pub struct Item {
     id: i32,
     nulls: u16,
     data: Vec<u8>,
+}
+
+impl Item {
+
 }
