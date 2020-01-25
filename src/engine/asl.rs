@@ -31,6 +31,12 @@ pub struct ColumnValue {
 }
 
 #[derive(Debug, Clone)]
+pub struct Record {
+    pub values: Vec<Value>,
+}
+
+
+#[derive(Debug, Clone)]
 pub enum Operator {
     Add,
     Subtract,
@@ -326,12 +332,12 @@ impl Value {
     /**
     * Get u8 array of the value
     */
-    pub fn to_be_bytes(self) -> Vec<u8> {
+    pub fn to_be_bytes(&self) -> Vec<u8> {
         match self {
-            Value::Str(val) => val.into_bytes(),
-            Value::Int(val) => val.to_be_bytes().to_vec(),
-            Value::Float(val) => val.to_be_bytes().to_vec(),
-            Value::Bool(val) => (if val { 1u8 } else { 0u8 }).to_be_bytes().to_vec(),
+            Value::Str(val) => val.clone().into_bytes(),
+            Value::Int(val) => val.clone().to_be_bytes().to_vec(),
+            Value::Float(val) => val.clone().to_be_bytes().to_vec(),
+            Value::Bool(val) => (if *val { 1u8 } else { 0u8 }).to_be_bytes().to_vec(),
             Value::Null => Vec::new(),
         }
     }

@@ -1,4 +1,6 @@
 #[macro_use] extern crate lalrpop_util;
+
+extern crate bit_vec;
 extern crate lalrpop;
 
 mod config;

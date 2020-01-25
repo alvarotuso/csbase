@@ -12,6 +12,7 @@ lalrpop = "0.17.2"
 
 [dependencies]
 bincode = "1.2.1"
+bit-vec = "0.6"
 lalrpop = "0.17.2"
 lalrpop-util = "0.17.2"
 regex = "0.2.1"
