@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
-use std::io::{Read, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 
 use bincode;
 use shellexpand;
@@ -10,10 +10,7 @@ use crate::engine::db;
 use crate::engine::errors::QueryError;
 use crate::config::config;
 use crate::engine::db::DatabaseDefinition;
-
-
-const PAGE_SIZE : usize = 8 * 1024;
-const U32_SIZE_BYTES : i32 = 4;
+use crate::engine::pages::{ Item, Page, PAGE_SIZE };
 
 #[derive(Debug)]
 pub struct DBFileSystem {
@@ -79,25 +76,39 @@ impl DBFileSystem {
     }
 
     /**
-    * Insert a record into the table file
+    * Insert a record into the last page of the table file
+    * Creates a new page if the current one is full
     */
-    pub fn insert_record(&self, table: &asl::Table, values: Vec<asl::Value>) -> Result<(), QueryError> {
+    pub fn insert_record(&self, table: &asl::Table, record: &asl::Record) -> Result<(), QueryError> {
         let mut file = fs::OpenOptions::new()
+            .create(true)
             .write(true)
-            .append(true)
             .open(self.get_table_data_path(table))?;
-        for value in values {
-            let value_bytes = value.to_be_bytes();
-            let mut value_bytes_with_length: Vec<u8> = Vec::new();
-            let value_length_bytes = (value_bytes.len() as i32).to_be_bytes().to_vec();
-            for byte in value_length_bytes {
-                value_bytes_with_length.push(byte);
+        let current_pages = file.metadata()?.len() / PAGE_SIZE as u64;
+        let item = Item::from_record(record);
+        let mut last_page_offset = if current_pages > 0 { PAGE_SIZE as u64 * (current_pages - 1) } else { 0 };
+        let mut last_page;
+        if current_pages > 0 {
+            file.seek(SeekFrom::Start(last_page_offset))?;
+            let mut page_bytes = [0u8; PAGE_SIZE];
+            file.read(&mut page_bytes)?;
+            last_page = Page::from_bytes(&page_bytes);
+            match last_page.add_item(&item) {
+                Ok(_) => (),
+                Err(_) => {
+                    let mut new_page = Page::new(last_page.id + 1);
+                    new_page.add_item(&item)?;
+                    last_page = new_page;
+                    last_page_offset += PAGE_SIZE as u64;
+                }
             }
-            for byte in value_bytes {
-                value_bytes_with_length.push(byte);
-            }
-            file.write(&value_bytes_with_length)?;
+        } else {
+            let mut new_page = Page::new(1);
+            new_page.add_item(&item)?;
+            last_page = new_page;
         }
+        file.seek(SeekFrom::Start(last_page_offset))?;
+        file.write(&last_page.to_bytes())?;
         Ok(())
     }
 
@@ -106,72 +117,27 @@ impl DBFileSystem {
     * Find records in the table file that match the given condition
     */
     pub fn select_records(&self, table: &asl::Table, columns: &Vec<String>,
-                          condition: &Option<Box<asl::Expression>>) -> Result<Vec<Vec<asl::Value>>, QueryError> {
+                          condition: &Option<Box<asl::Expression>>) -> Result<Vec<asl::Record>, QueryError> {
         let mut file = fs::File::open(self.get_table_data_path(table))?;
-        let mut buffer = [0; PAGE_SIZE];
-        let mut records: Vec<Vec<asl::Value>> = Vec::new();
-        let mut current_record: Vec<asl::Value> = Vec::new();
-        let mut current_token: &[u8];
-        let mut carryover_bytes = Vec::new();
-        let mut current_target_bytes: i32 = U32_SIZE_BYTES;
-        let mut reading_size = true;
-        let mut carryover = false;
-        while file.read(&mut buffer)? > 0 {
-            let mut offset = 0;
-            while offset < buffer.len() {
-                if offset + current_target_bytes as usize > buffer.len() {
-                    carryover = true;
-                    let remaining_buffer_bytes = &buffer[offset..buffer.len()];
-                    carryover_bytes.extend_from_slice(remaining_buffer_bytes);
-                    current_target_bytes -= remaining_buffer_bytes.len() as i32;
-                    break;
-                }
-                if carryover {
-                    let remaining_token_bytes = &buffer[offset..offset + current_target_bytes as usize];
-                    carryover_bytes.extend_from_slice(remaining_token_bytes);
-                    current_token = carryover_bytes.as_slice();
-                } else {
-                    current_token = &buffer[offset..offset + current_target_bytes as usize];
-                }
-                if current_token.len() == 0 {
-                    break;  // there are no more records in this buffer
-                }
-
-                offset += current_target_bytes as usize;
-                if reading_size {
-                    let mut size_bytes: [u8; 4] = Default::default();
-                    size_bytes.copy_from_slice(&current_token[0..4]);
-                    current_target_bytes = i32::from_be_bytes(size_bytes);
-                    reading_size = false;
-                } else {
-                    let value_type = &table.columns[current_record.len()].column_type;
-                    current_record.push(
-                        asl::Value::from_be_bytes(
-                            Vec::from(current_token),
-                            value_type
-                        )
-                    );
-                    if current_record.len() == table.columns.len() {
-                        let include_record = match condition {
-                            Some(condition) => {
-                                let identifier_values: HashMap<String, asl::Value> =
-                                    current_record.iter().enumerate()
-                                        .map(|(idx, value)| (table.columns[idx].name.clone(), value.clone()))
-                                        .collect();
-                                condition.evaluate(Option::Some(&identifier_values))? == asl::Value::Bool(true)
-                            }
-                            None => true
-                        };
-                        if include_record {
-                            records.push(current_record);
-                        }
-                        current_record = Vec::new();
+        let mut page_buffer = [0; PAGE_SIZE];
+        let mut records: Vec<asl::Record> = Vec::new();
+        while file.read(&mut page_buffer)? > 0 {
+            let page = Page::from_bytes(&page_buffer);
+            for item in page.get_items() {
+                let record = item.to_record(table);
+                let include_record = match condition {
+                    Some(condition) => {
+                        let identifier_values: HashMap<String, asl::Value> =
+                            record.values.iter().enumerate()
+                                .map(|(idx, value)| (table.columns[idx].name.clone(), value.clone()))
+                                .collect();
+                        condition.evaluate(Option::Some(&identifier_values))? == asl::Value::Bool(true)
                     }
-                    reading_size = true;
-                    current_target_bytes = U32_SIZE_BYTES;
+                    None => true
+                };
+                if include_record {
+                    records.push(record);
                 }
-                carryover = false;
-                carryover_bytes = Vec::new();
             }
         }
         Ok(records)

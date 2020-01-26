@@ -3,14 +3,30 @@ use std::convert::TryInto;
 use std::mem;
 
 use crate::engine::asl;
+use crate::engine::errors::PagingError;
+use crate::engine::utils::copy_bytes_into;
 
-const PAGE_SIZE: usize = 8 * 1024;
+pub const PAGE_SIZE: usize = 8 * 1024;
 const USIZE_SIZE: usize = mem::size_of::<usize>();
-const PAGE_DATA_SIZE: usize = PAGE_SIZE - mem::size_of::<u32>() - USIZE_SIZE*2;
+const U32_SIZE: usize = mem::size_of::<u32>();
+const PAGE_DATA_SIZE: usize = PAGE_SIZE - U32_SIZE - USIZE_SIZE*2;
+
+/**
+* TryFrom trait copied from the std lib and implemented specifically for the page data size
+* This is needed because this trait is only supported for arrays of size up to 32
+*/
+fn try_page_from_slice(slice: &[u8]) -> Result<&[u8; PAGE_DATA_SIZE], PagingError> {
+    if slice.len() == PAGE_DATA_SIZE {
+        let ptr = slice.as_ptr() as *const [u8; PAGE_DATA_SIZE];
+        unsafe { Ok(&*ptr) }
+    } else {
+        Err(PagingError::InvalidSliceLength)
+    }
+}
 
 #[derive(Clone)]
 pub struct Page {
-    id: u32,
+    pub id: u32,
     free_space_start: usize,
     free_space_end: usize,
     data: [u8; PAGE_DATA_SIZE],
@@ -19,6 +35,42 @@ pub struct Page {
 impl Page {
     pub fn new(id: u32) -> Page {
         Page { id, data: [0; PAGE_DATA_SIZE], free_space_start: 0, free_space_end: PAGE_DATA_SIZE }
+    }
+
+    /**
+    * Create a page struct from raw bytes, possibly coming from a file
+    */
+    pub fn from_bytes(bytes: &[u8; PAGE_SIZE]) -> Page {
+        let mut offset = 0;
+        let id = u32::from_be_bytes(bytes[offset..offset + U32_SIZE].try_into().unwrap());
+        offset += U32_SIZE;
+        let free_space_start = usize::from_be_bytes(bytes[offset..offset + USIZE_SIZE].try_into().unwrap());
+        offset += USIZE_SIZE;
+        let free_space_end = usize::from_be_bytes(bytes[offset..offset + USIZE_SIZE].try_into().unwrap());
+        offset += USIZE_SIZE;
+        let data: [u8; PAGE_DATA_SIZE] = *try_page_from_slice(&bytes[offset..offset + PAGE_DATA_SIZE]).unwrap();
+        Page {
+            id,
+            free_space_start,
+            free_space_end,
+            data,
+        }
+    }
+
+    /**
+    * Return a byte representation of this page
+    */
+    pub fn to_bytes(&self) -> [u8; PAGE_SIZE] {
+        let mut bytes = [0u8; PAGE_SIZE];
+        let mut offset = 0;
+        copy_bytes_into(&mut bytes, &self.id.to_be_bytes(), offset);
+        offset += U32_SIZE;
+        copy_bytes_into(&mut bytes, &self.free_space_start.to_be_bytes(), offset);
+        offset += USIZE_SIZE;
+        copy_bytes_into(&mut bytes, &self.free_space_end.to_be_bytes(), offset);
+        offset += USIZE_SIZE;
+        copy_bytes_into(&mut bytes, &self.data, offset);
+        bytes
     }
 
     fn get_item_offset_and_sizes(&self) -> Vec<(usize, usize)> {
@@ -36,12 +88,32 @@ impl Page {
         item_offsets
     }
 
-    fn get_items(&self) -> Vec<Item> {
+    pub fn get_items(&self) -> Vec<Item> {
         self.get_item_offset_and_sizes().iter().map(
             |(offset, size)| {
                 Item::from_page_data(&self.data[*offset..*size])
             }
         ).collect()
+    }
+
+    fn get_free_space(&self) -> usize {
+        self.free_space_end - self.free_space_start
+    }
+
+    pub fn add_item(&mut self, item: &Item) -> Result<(), PagingError> {
+        let item_data = item.to_page_data();
+        let item_size = item_data.len();
+        if item_size + USIZE_SIZE*2 > self.get_free_space() {
+            Err(PagingError::NotEnoughSpace)
+        } else {
+            let item_offset = &self.free_space_end - item_size;
+            copy_bytes_into(&mut self.data, &item_offset.to_be_bytes(), self.free_space_start);
+            copy_bytes_into(&mut self.data, &item_size.to_be_bytes(), self.free_space_start + USIZE_SIZE);
+            self.free_space_start += USIZE_SIZE*2;
+            copy_bytes_into(&mut self.data, item_data.as_slice(), item_offset);
+            self.free_space_end = item_offset;
+            Ok(())
+        }
     }
 }
 
@@ -141,6 +213,7 @@ impl Item {
                     let bytes = &self.field_data[offset..next_offset];
                     values.push(asl::Value::from_be_bytes(bytes.to_vec(),
                                                           &column.column_type));
+                    offset = next_offset;
                 }
             }
 

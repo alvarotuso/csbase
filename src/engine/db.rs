@@ -91,7 +91,7 @@ impl Database {
         print!("Evaluated expressions: {:?}", evaluated_expressions);
         self.validate_insert(&table, &query, &evaluated_expressions)?;
         let result = format!("Running Insert {:?}", query);
-        self.db_filesystem.insert_record(table, evaluated_expressions)?;
+        self.db_filesystem.insert_record(table, &asl::Record { values: evaluated_expressions })?;
         Ok(result)
     }
 
