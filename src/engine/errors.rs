@@ -12,6 +12,7 @@ pub enum QueryError  {
     IOError(std::io::Error),
     NotFound(String),
     Conflict(String),
+    PagingError(String),
     ValidationError(String),
 }
 
@@ -29,6 +30,10 @@ impl <'input> std::convert::From<ParseError<'input>> for QueryError {
     fn from(error: ParseError<'input>) -> Self {QueryError::ParseError(format!("{:?}", error))}
 }
 
+impl std::convert::From<PagingError> for QueryError {
+    fn from(error: PagingError) -> Self {QueryError::PagingError(format!("{:?}", error))}
+}
+
 #[derive(Debug)]
 pub enum SystemError {
     IOError(std::io::Error),
@@ -44,3 +49,15 @@ impl std::convert::From<std::io::Error> for SystemError {
     fn from(error: std::io::Error) -> Self {SystemError::IOError(error)}
 }
 
+
+#[derive(Debug)]
+pub enum PagingError {
+    NotEnoughSpace,
+    InvalidSliceLength,
+}
+
+impl fmt::Display for PagingError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", &self)
+    }
+}
