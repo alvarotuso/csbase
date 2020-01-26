@@ -91,7 +91,7 @@ impl Page {
     pub fn get_items(&self) -> Vec<Item> {
         self.get_item_offset_and_sizes().iter().map(
             |(offset, size)| {
-                Item::from_page_data(&self.data[*offset..*size])
+                Item::from_page_data(&self.data[*offset..*offset + *size])
             }
         ).collect()
     }
@@ -117,6 +117,7 @@ impl Page {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct Item {
     number_of_fields: usize,
     null_map: BitVec,
@@ -149,7 +150,7 @@ impl Item {
     */
     pub fn from_record(record: &asl::Record) -> Item {
         let number_of_fields = record.values.len();
-        let mut null_map = BitVec::new();
+        let mut null_map = BitVec::from_elem(number_of_fields, false);
         let mut field_data = Vec::new();
         for (idx, value) in record.values.iter().enumerate() {
             let value_bytes = match value {
@@ -166,7 +167,9 @@ impl Item {
             if let Some(bytes) = value_bytes {
                 field_data.extend(bytes);
             }
-            null_map.set(idx, if let asl::Value::Null = value { true } else { false });
+            if let asl::Value::Null = value {
+                null_map.set(idx, true);
+            }
         }
         Item {
             number_of_fields,
@@ -202,10 +205,14 @@ impl Item {
                 values.push(asl::Value::Null);
             } else {
                 let size = match column.column_type {
-                    asl::Type::Str => Some(usize::from_be_bytes(self.field_data[offset..USIZE_SIZE].try_into().unwrap())),
-                    asl::Type::Int => Some(4usize),
-                    asl::Type::Float => Some(4usize),
-                    asl::Type::Bool => Some(1usize),
+                    asl::Type::Str => {
+                        let size = usize::from_be_bytes(self.field_data[offset..offset + USIZE_SIZE].try_into().unwrap());
+                        offset += USIZE_SIZE;
+                        Some(size)
+                    },
+                    asl::Type::Int => Some(mem::size_of::<i32>()),
+                    asl::Type::Float => Some(mem::size_of::<f32>()),
+                    asl::Type::Bool => Some(mem::size_of::<u8>()),
                     _ => None,
                 };
                 if let Some(size) = size {

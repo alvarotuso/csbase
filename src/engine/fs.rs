@@ -82,6 +82,7 @@ impl DBFileSystem {
     pub fn insert_record(&self, table: &asl::Table, record: &asl::Record) -> Result<(), QueryError> {
         let mut file = fs::OpenOptions::new()
             .create(true)
+            .read(true)
             .write(true)
             .open(self.get_table_data_path(table))?;
         let current_pages = file.metadata()?.len() / PAGE_SIZE as u64;
