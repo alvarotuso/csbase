@@ -76,6 +76,37 @@ impl DBFileSystem {
     }
 
     /**
+    * Update the records that match the optionally provided conditions
+    * Assumes that the types have already been validated
+    */
+    pub fn update_records(&self, table: &asl::Table, values: &Vec<asl::ColumnValue>,
+                          condition: &Option<Box<asl::Expression>>) -> Result<(), QueryError> {
+        let mut file = fs::OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .open(self.get_table_data_path(table))?;
+        let mut page_buffer = [0; PAGE_SIZE];
+        while file.read(&mut page_buffer)? > 0 {
+            let page = Page::from_bytes(&page_buffer);
+            for item in page.get_items() {
+                let mut record = item.to_record(table);
+                let record_needs_update = match condition {
+                    Some(condition) => condition.evaluate_for_record(&table, &record)? == asl::Value::Bool(true),
+                    None => true
+                };
+                if record_needs_update {
+                    for value in values {
+                        let column_index = table.columns.iter().position(|col| col == value.column).unwrap();
+                        record.values[column_index] = value.value.clone();
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /**
     * Insert a record into the last page of the table file
     * Creates a new page if the current one is full
     */
@@ -127,13 +158,7 @@ impl DBFileSystem {
             for item in page.get_items() {
                 let record = item.to_record(table);
                 let include_record = match condition {
-                    Some(condition) => {
-                        let identifier_values: HashMap<String, asl::Value> =
-                            record.values.iter().enumerate()
-                                .map(|(idx, value)| (table.columns[idx].name.clone(), value.clone()))
-                                .collect();
-                        condition.evaluate(Option::Some(&identifier_values))? == asl::Value::Bool(true)
-                    }
+                    Some(condition) => condition.evaluate_for_record(&table, &record)? == asl::Value::Bool(true),
                     None => true
                 };
                 if include_record {

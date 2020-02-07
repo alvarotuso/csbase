@@ -71,6 +71,17 @@ pub enum Expression {
 
 impl Expression {
     /**
+    * Evaluates this expression for a specific record, mapping the identifiers based on the table
+    */
+    pub fn evaluate_for_record(&self, table: &Table, record: &Record) -> Result<Value, QueryError> {
+        let identifier_values: HashMap<String, Value> =
+            record.values.iter().enumerate()
+                .map(|(idx, value)| (table.columns[idx].name.clone(), value.clone()))
+                .collect();
+        condition.evaluate(Option::Some(&identifier_values))
+    }
+
+    /**
     * Evaluates this expression. All Identifier variants must be turned into values first
     */
     pub fn evaluate(&self, identifier_values: Option<&HashMap<String, Value>>) -> Result<Value, QueryError> {
