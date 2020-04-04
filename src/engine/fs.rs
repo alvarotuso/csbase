@@ -97,7 +97,7 @@ impl DBFileSystem {
                 };
                 if record_needs_update {
                     for value in values {
-                        let column_index = table.columns.iter().position(|col| col == value.column).unwrap();
+                        let column_index = table.columns.iter().position(|col| col.name == value.column).unwrap();
                         record.values[column_index] = value.value.clone();
                     }
                 }

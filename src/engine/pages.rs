@@ -190,7 +190,7 @@ impl Item {
     }
 
     /**
-    * Build a record from this item data
+    * Build a record from this item's data
     */
     pub fn to_record(&self, table: &asl::Table) -> asl::Record {
         let mut values = Vec::new();

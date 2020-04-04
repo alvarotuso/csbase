@@ -78,7 +78,7 @@ impl Expression {
             record.values.iter().enumerate()
                 .map(|(idx, value)| (table.columns[idx].name.clone(), value.clone()))
                 .collect();
-        condition.evaluate(Option::Some(&identifier_values))
+        self.evaluate(Option::Some(&identifier_values))
     }
 
     /**
